@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">Farm Crop Analyzer</string>
+    <string name="welcome_title">Welcome to Farm Crop Analyzer</string>
+    <string name="upload_photo">Upload Crop Photo</string>
+    <string name="analyzing">Analyzing your crop...</string>
+    <string name="crop_analysis">Crop Analysis</string>
+    <string name="health_status">Health Status</string>
+    <string name="diseases">Detected Diseases</string>
+    <string name="lifecycle">Growth Lifecycle</string>
+    <string name="requirements">Care Requirements</string>
+    <string name="additional_info">Additional Information</string>
+</resources>
