@@ -3,11 +3,11 @@ package com.example.farm.data.remote
 object ApiConfig {
     // Plant.id API Configuration
     const val PLANT_ID_BASE_URL = "https://api.plant.id/"
-    const val PLANT_ID_API_KEY = "BB2RluFQ3DHxDNRiJsuCMozWJL2slDusc0EDMHtWnWWzq9GznP"
+    const val PLANT_ID_API_KEY = "YOUR_PLANT_ID_API_KEY"
     
     // Trefle API Configuration
     const val TREFLE_BASE_URL = "https://trefle.io/api/v1/"
-    const val TREFLE_API_KEY = "pEKzv-oGpISAOOa3Y2HbusHiMgdziXGOSrngqX60keM"
+    const val TREFLE_API_KEY = "YOUR_TREFLE_API_KEY"
     
     // OpenWeatherMap API Configuration
     const val WEATHER_BASE_URL = "https://api.openweathermap.org/data/2.5/"
