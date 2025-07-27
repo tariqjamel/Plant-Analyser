@@ -144,7 +144,7 @@ class CropAnalysisRepository @Inject constructor(
                     )
                 )
                 val geminiResponse = geminiApi.generateContent(
-                    apiKey = "AIzaSyDSXg8uiPWAuKZgH-LYH3YcWXY-l2jJpMQ",
+                    apiKey = "YOUR_GEMINI_API_KEY",
                     request = geminiRequest
                 )
                 val rawGeminiText = geminiResponse.body()?.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
