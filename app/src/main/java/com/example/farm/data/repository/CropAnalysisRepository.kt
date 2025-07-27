@@ -27,6 +27,7 @@ import javax.inject.Singleton
 @Singleton
 class CropAnalysisRepository @Inject constructor(
     @ApplicationContext private val context: Context,
+
     private val api: CropAnalysisApi,
     private val wikipediaApi: WikipediaApi,
     private val openAIApi: OpenAIApi,
