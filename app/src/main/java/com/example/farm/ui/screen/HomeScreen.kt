@@ -134,8 +134,7 @@ fun HomeScreen(
                     )
                 }
             }
-            
-            // Welcome Text
+
             Text(
                 text = "Welcome to Farm Crop Analyzer",
                 fontSize = 24.sp,
@@ -152,7 +151,6 @@ fun HomeScreen(
                 modifier = Modifier.padding(bottom = 48.dp)
             )
             
-            // Upload Button
             Button(
                 onClick = { showImagePickerDialog = true },
                 modifier = Modifier
@@ -169,7 +167,6 @@ fun HomeScreen(
                 )
             }
             
-            // Features List
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -198,7 +195,6 @@ fun HomeScreen(
         }
     }
     
-    // Loading overlay
     if (uiState is CropAnalysisUiState.Loading) {
         Box(
             modifier = Modifier.fillMaxSize(),
@@ -250,7 +246,6 @@ fun HomeScreen(
                     )
                     cameraLauncher.launch(currentPhotoUri)
                 } catch (e: Exception) {
-                    // Handle error - could show a snackbar or toast
                     println("Error creating image file: ${e.message}")
                 }
             },

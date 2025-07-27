@@ -100,7 +100,7 @@ object NetworkModule {
     @Named("PlantId")
     fun providePlantIdRetrofit(@Named("PlantId") okHttpClient: OkHttpClient): Retrofit {
         return Retrofit.Builder()
-            .baseUrl("https://api.plant.id/") // Plant.id API base URL
+            .baseUrl("https://api.plant.id/")
             .client(okHttpClient)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
@@ -111,7 +111,7 @@ object NetworkModule {
     @Named("Trefle")
     fun provideTrefleRetrofit(@Named("Trefle") okHttpClient: OkHttpClient): Retrofit {
         return Retrofit.Builder()
-            .baseUrl(ApiConfig.TREFLE_BASE_URL) // Trefle API base URL
+            .baseUrl(ApiConfig.TREFLE_BASE_URL)
             .client(okHttpClient)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
@@ -122,7 +122,7 @@ object NetworkModule {
     @Named("Weather")
     fun provideWeatherRetrofit(@Named("Weather") okHttpClient: OkHttpClient): Retrofit {
         return Retrofit.Builder()
-            .baseUrl("https://api.openweathermap.org/data/2.5/") // OpenWeatherMap API
+            .baseUrl("https://api.openweathermap.org/data/2.5/")
             .client(okHttpClient)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
@@ -134,11 +134,9 @@ object NetworkModule {
         @Named("PlantId") plantIdRetrofit: Retrofit,
         @Named("Trefle") trefleRetrofit: Retrofit
     ): CropAnalysisApi {
-        // Create separate API instances for each service
         val plantIdApi = plantIdRetrofit.create(CropAnalysisApi::class.java)
         val trefleApi = trefleRetrofit.create(CropAnalysisApi::class.java)
         
-        // Return a combined API that delegates to the appropriate service
         return object : CropAnalysisApi {
             override suspend fun identifyPlant(
                 image: okhttp3.MultipartBody.Part,
@@ -170,9 +168,101 @@ object NetworkModule {
                 apiKey: String,
                 units: String
             ): com.example.farm.data.model.WeatherResponse {
-                // For now, return a mock weather response since we don't have weather API configured
                 throw UnsupportedOperationException("Weather API not yet implemented")
             }
         }
+    }
+
+    @Provides
+    @Singleton
+    @Named("Wikipedia")
+    fun provideWikipediaOkHttpClient(): OkHttpClient {
+        return OkHttpClient.Builder()
+            .addInterceptor(HttpLoggingInterceptor().apply {
+                level = HttpLoggingInterceptor.Level.BODY
+            })
+            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+    }
+
+    @Provides
+    @Singleton
+    @Named("Wikipedia")
+    fun provideWikipediaRetrofit(@Named("Wikipedia") okHttpClient: OkHttpClient): Retrofit {
+        return Retrofit.Builder()
+            .baseUrl(ApiConfig.WIKIPEDIA_BASE_URL)
+            .client(okHttpClient)
+            .addConverterFactory(retrofit2.converter.gson.GsonConverterFactory.create())
+            .build()
+    }
+
+    @Provides
+    @Singleton
+    fun provideWikipediaApi(@Named("Wikipedia") wikipediaRetrofit: Retrofit): com.example.farm.data.remote.WikipediaApi {
+        return wikipediaRetrofit.create(com.example.farm.data.remote.WikipediaApi::class.java)
+    }
+
+    @Provides
+    @Singleton
+    @Named("OpenAI")
+    fun provideOpenAIOkHttpClient(): OkHttpClient {
+        return OkHttpClient.Builder()
+            .addInterceptor(HttpLoggingInterceptor().apply {
+                level = HttpLoggingInterceptor.Level.BODY
+            })
+            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+    }
+
+    @Provides
+    @Singleton
+    @Named("OpenAI")
+    fun provideOpenAIRetrofit(@Named("OpenAI") okHttpClient: OkHttpClient): Retrofit {
+        return Retrofit.Builder()
+            .baseUrl("https://api.openai.com/")
+            .client(okHttpClient)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+    }
+
+    @Provides
+    @Singleton
+    fun provideOpenAIApi(@Named("OpenAI") openAIRetrofit: Retrofit): com.example.farm.data.remote.OpenAIApi {
+        return openAIRetrofit.create(com.example.farm.data.remote.OpenAIApi::class.java)
+    }
+
+    @Provides
+    @Singleton
+    @Named("Gemini")
+    fun provideGeminiOkHttpClient(): OkHttpClient {
+        return OkHttpClient.Builder()
+            .addInterceptor(HttpLoggingInterceptor().apply {
+                level = HttpLoggingInterceptor.Level.BODY
+            })
+            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+    }
+
+    @Provides
+    @Singleton
+    @Named("Gemini")
+    fun provideGeminiRetrofit(@Named("Gemini") okHttpClient: OkHttpClient): Retrofit {
+        return Retrofit.Builder()
+            .baseUrl("https://generativelanguage.googleapis.com/")
+            .client(okHttpClient)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+    }
+
+    @Provides
+    @Singleton
+    fun provideGeminiApi(@Named("Gemini") geminiRetrofit: Retrofit): com.example.farm.data.remote.GeminiApi {
+        return geminiRetrofit.create(com.example.farm.data.remote.GeminiApi::class.java)
     }
 } 

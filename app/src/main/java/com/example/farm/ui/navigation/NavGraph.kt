@@ -24,7 +24,6 @@ fun NavGraph(navController: NavHostController) {
         }
         
         composable(Screen.Analysis.route) { backStackEntry ->
-            // Get the parent entry for the Home route to share the ViewModel
             val parentEntry = remember(backStackEntry) { navController.getBackStackEntry(Screen.Home.route) }
             AnalysisScreen(
                 onNavigateBack = { navController.popBackStack() },

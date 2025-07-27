@@ -6,6 +6,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.Science
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Timeline
+import androidx.compose.material.icons.filled.WaterDrop
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,6 +28,8 @@ import com.example.farm.ui.viewmodel.CropAnalysisUiState
 import com.example.farm.ui.viewmodel.CropAnalysisViewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavBackStackEntry
+import com.example.farm.ui.component.PlantInfoSectionsCard
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -36,8 +46,7 @@ fun AnalysisScreen(
         viewModel.resetState()
         onNavigateBack()
     }
-    
-    // Debug logging for state changes
+
     LaunchedEffect(uiState) {
         println("AnalysisScreen: UI State changed to: $uiState")
         when (val state = uiState) {
@@ -52,7 +61,6 @@ fun AnalysisScreen(
             }
             else -> {
                 println("AnalysisScreen: Initial state - waiting for data")
-                // Don't navigate back automatically, let the user use the back button
             }
         }
     }
@@ -104,6 +112,16 @@ fun AnalysisScreen(
                     item {
                         CropHeaderCard(currentState.analysis)
                     }
+                    currentState.analysis.plantInfoSections?.let { plantInfoSections ->
+                        item {
+                            PlantInfoSectionsCard(plantInfoSections)
+                        }
+                    }
+                    if (currentState.analysis.plantInfoSections == null && !currentState.analysis.aiDetails.isNullOrBlank()) {
+                        item {
+                            AIPlantGuideCard(currentState.analysis.aiDetails)
+                        }
+                    }
                     
                     item {
                         HealthStatusCard(currentState.analysis)
@@ -117,6 +135,18 @@ fun AnalysisScreen(
                     
                     item {
                         LifecycleCard(currentState.analysis.lifecycle)
+                    }
+                    
+                    if (currentState.analysis.isGeneric) {
+                        item {
+                            Card(modifier = Modifier.padding(8.dp)) {
+                                Text(
+                                    text = "Detailed requirements for this plant are not available. Showing general care information.",
+                                    color = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.padding(12.dp)
+                                )
+                            }
+                        }
                     }
                     
                     item {
@@ -203,46 +233,107 @@ private fun CropHeaderCard(analysis: CropAnalysis) {
         Column(
             modifier = Modifier.padding(16.dp)
         ) {
-            Text(
-                text = analysis.cropName,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "Confidence: ${(analysis.confidence * 100).toInt()}%",
-                fontSize = 16.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Psychology,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = analysis.cropName,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "AI Confidence: ${(analysis.confidence * 100).toInt()}%",
+                        fontSize = 16.sp,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                    )
+                }
+            }
+            
+            // Show scientific name if available from plant details
+            analysis.plantDetails?.scientificName?.let { scientificName ->
+                if (scientificName.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Science,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = scientificName,
+                            fontSize = 14.sp,
+                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+            }
         }
     }
 }
 
 @Composable
 private fun HealthStatusCard(analysis: CropAnalysis) {
-    Card {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = if (analysis.isHealthy) 
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+            else 
+                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+        )
+    ) {
         Column(
             modifier = Modifier.padding(16.dp)
         ) {
-            Text(
-                text = "Health Status",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-            
             Row(
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = if (analysis.isHealthy) "✅ Healthy" else "⚠️ Issues Detected",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = if (analysis.isHealthy) 
+                Icon(
+                    imageVector = if (analysis.isHealthy) Icons.Default.CheckCircle else Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = if (analysis.isHealthy) 
                         MaterialTheme.colorScheme.primary 
                     else 
-                        MaterialTheme.colorScheme.error
+                        MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(24.dp)
                 )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Health Status",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (analysis.isHealthy) 
+                            MaterialTheme.colorScheme.primary 
+                        else 
+                            MaterialTheme.colorScheme.error
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = if (analysis.isHealthy) "Plant appears healthy" else "Issues detected",
+                        fontSize = 14.sp,
+                        color = if (analysis.isHealthy) 
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
+                        else 
+                            MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
+                    )
+                }
             }
         }
     }
@@ -250,16 +341,34 @@ private fun HealthStatusCard(analysis: CropAnalysis) {
 
 @Composable
 private fun DiseasesCard(diseases: List<Disease>) {
-    Card {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+        )
+    ) {
         Column(
             modifier = Modifier.padding(16.dp)
         ) {
-            Text(
-                text = "Detected Diseases",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = "Detected Diseases",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
             
             diseases.forEach { disease ->
                 DiseaseItem(disease)
@@ -273,53 +382,104 @@ private fun DiseasesCard(diseases: List<Disease>) {
 
 @Composable
 private fun DiseaseItem(disease: Disease) {
-    Column {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp)
         ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = disease.name,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                SeverityChip(disease.severity)
+            }
+            
+            Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = disease.name,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Medium
-            )
-            SeverityChip(disease.severity)
-        }
-        
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = disease.description,
-            fontSize = 14.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = "Symptoms:",
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Medium
-        )
-        disease.symptoms.forEach { symptom ->
-            Text(
-                text = "• $symptom",
+                text = disease.description,
                 fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                lineHeight = 20.sp
             )
-        }
-        
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = "Remedies:",
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Medium
-        )
-        disease.remedies.forEach { remedy ->
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
             Text(
-                text = "• $remedy",
+                text = "Symptoms:",
                 fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface
             )
+            Spacer(modifier = Modifier.height(4.dp))
+            disease.symptoms.forEach { symptom ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 1.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier
+                            .size(14.dp)
+                            .padding(top = 2.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = symptom,
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            Text(
+                text = "Remedies:",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            disease.remedies.forEach { remedy ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 1.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CheckCircle,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .size(14.dp)
+                            .padding(top = 2.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = remedy,
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
         }
     }
 }
@@ -345,43 +505,70 @@ private fun SeverityChip(severity: DiseaseSeverity) {
 
 @Composable
 private fun LifecycleCard(lifecycle: CropLifecycle) {
-    Card {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
         Column(
             modifier = Modifier.padding(16.dp)
         ) {
-            Text(
-                text = "Growth Lifecycle (${lifecycle.totalDays} days total)",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Timeline,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = "Growth Lifecycle (${lifecycle.totalDays} days total)",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
             
             lifecycle.stages.forEach { stage ->
-                Row(
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(vertical = 2.dp)
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stage.name,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = stage.description,
+                                fontSize = 14.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                         Text(
-                            text = stage.name,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Text(
-                            text = stage.description,
+                            text = "${stage.duration} days",
                             fontSize = 14.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.primary
                         )
                     }
-                    Text(
-                        text = "${stage.duration} days",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
                 }
             }
         }
@@ -390,16 +577,34 @@ private fun LifecycleCard(lifecycle: CropLifecycle) {
 
 @Composable
 private fun RequirementsCard(requirements: CropRequirements) {
-    Card {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer
+        )
+    ) {
         Column(
             modifier = Modifier.padding(16.dp)
         ) {
-            Text(
-                text = "Care Requirements",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.WaterDrop,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.tertiary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = "Care Requirements",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
             
             RequirementItem("☀️ Sunlight", requirements.sunlight)
             RequirementItem("💧 Water", requirements.water)
@@ -415,35 +620,55 @@ private fun RequirementItem(label: String, value: String) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
+            .padding(vertical = 6.dp),
         verticalAlignment = Alignment.Top
     ) {
         Text(
             text = label,
             fontSize = 14.sp,
             fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onTertiaryContainer,
             modifier = Modifier.width(100.dp)
         )
         Text(
             text = value,
             fontSize = 14.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f),
+            modifier = Modifier.weight(1f)
         )
     }
 }
 
 @Composable
 private fun AdditionalInfoCard(info: AdditionalInfo) {
-    Card {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    ) {
         Column(
             modifier = Modifier.padding(16.dp)
         ) {
-            Text(
-                text = "Additional Information",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = "Additional Information",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
             
             InfoSection("Fertilizers", info.fertilizers)
             Spacer(modifier = Modifier.height(12.dp))
@@ -462,13 +687,72 @@ private fun InfoSection(title: String, items: List<String>) {
         text = title,
         fontSize = 16.sp,
         fontWeight = FontWeight.Medium,
+        color = MaterialTheme.colorScheme.onSurface,
         modifier = Modifier.padding(bottom = 8.dp)
     )
     items.forEach { item ->
-        Text(
-            text = "• $item",
-            fontSize = 14.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 2.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            Icon(
+                imageVector = Icons.Default.CheckCircle,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .size(16.dp)
+                    .padding(top = 2.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = item,
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+                lineHeight = 20.sp
+            )
+        }
+    }
+} 
+
+@Composable
+private fun AIPlantGuideCard(aiDetails: String) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer
+        ),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Psychology,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = "AI Plant Guide",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = aiDetails,
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f),
+                lineHeight = 22.sp,
+                textAlign = TextAlign.Justify
+            )
+        }
     }
 } 

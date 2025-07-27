@@ -21,7 +21,6 @@ interface CropAnalysisApi {
         @Part("details") details: String = "common_names,url,wiki_description,taxonomy,synonyms,edible_parts,watering,propagation_methods,sunlight,pruning_month,harvest_season,care"
     ): PlantIdResponse
     
-    // Trefle API v1 endpoints for detailed plant information
     @GET("plants")
     suspend fun searchPlants(
         @Query("q") query: String,

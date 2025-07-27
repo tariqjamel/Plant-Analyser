@@ -9,7 +9,11 @@ data class CropAnalysis(
     val diseases: List<Disease>,
     val lifecycle: CropLifecycle,
     val requirements: CropRequirements,
-    val additionalInfo: AdditionalInfo
+    val additionalInfo: AdditionalInfo,
+    val aiDetails: String? = null,
+    val plantDetails: StructuredPlantDetails? = null, // Structured plant details from Gemini
+    val plantInfoSections: PlantInfoSections? = null,
+    val isGeneric: Boolean = false
 )
 
 data class Disease(

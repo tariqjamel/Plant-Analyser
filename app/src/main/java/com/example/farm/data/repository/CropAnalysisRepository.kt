@@ -7,6 +7,12 @@ import android.net.Uri
 import com.example.farm.data.model.*
 import com.example.farm.data.remote.ApiConfig
 import com.example.farm.data.remote.CropAnalysisApi
+import com.example.farm.data.remote.OpenAIApi
+import com.example.farm.data.remote.OpenAIChatRequest
+import com.example.farm.data.remote.OpenAIMessage
+import com.example.farm.data.remote.WikipediaApi
+import com.example.farm.data.remote.WikipediaSummaryResponse
+import com.google.gson.JsonParser
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.delay
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -21,7 +27,10 @@ import javax.inject.Singleton
 @Singleton
 class CropAnalysisRepository @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val api: CropAnalysisApi
+    private val api: CropAnalysisApi,
+    private val wikipediaApi: WikipediaApi,
+    private val openAIApi: OpenAIApi,
+    private val geminiApi: com.example.farm.data.remote.GeminiApi // Inject GeminiApi
 ) {
     
     suspend fun analyzeCropImage(imageUri: Uri): Result<CropAnalysis> {
@@ -61,7 +70,7 @@ class CropAnalysisRepository @Inject constructor(
                 println("Starting API call to: https://api.plant.id/v2/identify")
                 val response = api.identifyPlant(
                     image = multipartBody,
-                    organs = "leaf", // You can make this configurable
+                    organs = "leaf",
                     includeRelated = false,
                     noReject = false
                 )
@@ -95,54 +104,263 @@ class CropAnalysisRepository @Inject constructor(
             // Get the top suggestion from Plant.id
             val topSuggestion = plantIdResponse.suggestions.maxByOrNull { it.probability }
             if (topSuggestion == null) {
-                throw Exception("No plant could be identified in the image. Please try with a clearer image of a plant.")
+                throw Exception("No plant could be identified.")
             }
-            
-            println("Top plant suggestion: ${topSuggestion.plantName}")
-            println("Confidence: ${topSuggestion.probability}")
-            
-            // Try to get detailed information from Trefle API
-            val trefleData = try {
-                println("Searching Trefle API for detailed plant information...")
-                val trefleResponse = api.searchPlants(
-                    query = topSuggestion.plantName,
-                    token = ApiConfig.TREFLE_API_KEY
-                )
-                println("Trefle search response: ${trefleResponse.data.size} plants found")
+            val plantName = topSuggestion.plantName
+
+            println("Plant name extracted for Gemini: $plantName")
+            // Gemini API: Fetch plant details as summary
+            var aiDetails: String? = null
+            var plantInfoSections: PlantInfoSections? = null
+            try {
+                val geminiPrompt = """
+                    Provide detailed information about the plant '$plantName' in the following format:
+
+                    **LIFECYCLE:**
+                    [Provide detailed information about the plant's growth cycle, stages, and timeline]
+
+                    **CARE REQUIREMENTS:**
+                    [Provide detailed care instructions including watering, sunlight, soil, and maintenance needs]
+
+                    **IDEAL CLIMATE:**
+                    [Provide information about temperature, humidity, and climate preferences]
+
+                    **INTERESTING FACTS:**
+                    [Provide 3-5 interesting facts about this plant]
+
+                    **SUMMARY:**
+                    [Provide a brief overview of the plant]
+
+                    Make sure to provide comprehensive, accurate information for each section.
+                """.trimIndent()
                 
-                // Improved plant matching logic
-                val treflePlant = findBestMatchingPlant(trefleResponse.data, topSuggestion.plantName)
-                
-                if (treflePlant != null) {
-                    println("Found matching Trefle plant: ${treflePlant.commonName} (${treflePlant.scientificName})")
-                    
-                    // Get detailed information for this plant
-                    val detailedResponse = api.getPlantDetails(
-                        plantId = treflePlant.id,
-                        token = ApiConfig.TREFLE_API_KEY
+                println("Gemini prompt: $geminiPrompt")
+                val geminiRequest = com.example.farm.data.remote.GeminiRequest(
+                    contents = listOf(
+                        com.example.farm.data.remote.GeminiContent(
+                            parts = listOf(com.example.farm.data.remote.GeminiContentPart(text = geminiPrompt))
+                        )
                     )
-                    println("Trefle detailed response received for plant ID: ${treflePlant.id}")
-                    detailedResponse.data
-                } else {
-                    println("No matching plant found in Trefle API")
-                    null
+                )
+                val geminiResponse = geminiApi.generateContent(
+                    apiKey = "AIzaSyDSXg8uiPWAuKZgH-LYH3YcWXY-l2jJpMQ",
+                    request = geminiRequest
+                )
+                val rawGeminiText = geminiResponse.body()?.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+                println("Raw Gemini response for $plantName: $rawGeminiText")
+                aiDetails = rawGeminiText
+                
+                // Parse the response into sections
+                if (!rawGeminiText.isNullOrBlank()) {
+                    try {
+                        plantInfoSections = parsePlantInfoSections(rawGeminiText)
+                        println("Successfully parsed plant info sections")
+                    } catch (e: Exception) {
+                        println("Failed to parse plant info sections: ${e.message}")
+                    }
                 }
             } catch (e: Exception) {
-                println("Trefle API call failed: ${e.message}")
-                println("Continuing with Plant.id data only")
-                null
+                println("Gemini summary extraction failed: ${e.message}")
             }
-            
-            // Convert combined API responses to our CropAnalysis model
-            val cropAnalysis = convertToCropAnalysis(topSuggestion, trefleData)
-            Result.success(cropAnalysis)
+
+            // Fallback: Use Wikipedia summary if Gemini fails
+            var wikiSummary: WikipediaSummaryResponse? = null
+            var fallbackDetails: String? = null
+            var usedFallback = false
+            if (aiDetails.isNullOrBlank()) {
+                usedFallback = true
+                try {
+                    val wikiResponse = wikipediaApi.getSummary(plantName.replace(" ", "_")).body()
+                    wikiSummary = wikiResponse
+                    fallbackDetails = wikiSummary?.extract
+                    println("Fallback to Wikipedia for $plantName: $fallbackDetails")
+                } catch (e: Exception) {
+                    println("Wikipedia fallback extraction failed: ${e.message}")
+                }
+            }
+            val description = aiDetails ?: fallbackDetails ?: "No description available."
+            println("Final detail shown to user for $plantName: $description")
+
+            // -Improved keyword extraction for lifecycle and requirements
+            fun parseLifecycleFromText(text: String): Pair<String, Int> {
+                val lower = text.lowercase()
+                return when {
+                    "annual" in lower -> "Annual" to 365
+                    "biennial" in lower -> "Biennial" to 730
+                    "perennial" in lower -> "Perennial" to 1095
+                    "germination" in lower && "harvest" in lower -> "Full cycle" to 120
+                    else -> "Not available" to -1
+                }
+            }
+            fun parseRequirementsFromText(text: String): CropRequirements {
+                val lower = text.lowercase()
+                val sunlight = when {
+                    "full sun" in lower -> "Full sun"
+                    "partial shade" in lower -> "Partial shade"
+                    "shade" in lower -> "Shade"
+                    else -> "Not available"
+                }
+                val water = when {
+                    "moist soil" in lower -> "Keep soil moist"
+                    "dry soil" in lower -> "Allow soil to dry between waterings"
+                    "water regularly" in lower -> "Water regularly"
+                    else -> "Not available"
+                }
+                val soilType = when {
+                    "loamy" in lower -> "Loamy"
+                    "sandy" in lower -> "Sandy"
+                    "clay" in lower -> "Clay"
+                    "well-drained" in lower -> "Well-drained"
+                    else -> "Not available"
+                }
+                val temperature = if ("temperature" in lower) "See Wikipedia summary" else "Not available"
+                val phLevel = if ("ph" in lower) "See Wikipedia summary" else "Not available"
+                return CropRequirements(sunlight, water, soilType, temperature, phLevel)
+            }
+            fun parseAdditionalInfoFromText(text: String): AdditionalInfo {
+                val lower = text.lowercase()
+                val fertilizers = if ("fertilizer" in lower) listOf("See Wikipedia summary") else listOf()
+                val idealClimate = if ("climate" in lower) "See Wikipedia summary" else ""
+                val harvestingTips = if ("harvest" in lower) listOf("See Wikipedia summary") else listOf()
+                val pestControl = if ("pest" in lower) listOf("See Wikipedia summary") else listOf()
+                return AdditionalInfo(fertilizers, idealClimate, harvestingTips, pestControl)
+            }
+
+            // Debug: Print Wikipedia summary
+            println("Wikipedia summary for $plantName: $description")
+
+            var extractedLifecycle: CropLifecycle? = null
+            var extractedRequirements: CropRequirements? = null
+            var extractedAdditionalInfo: AdditionalInfo? = null
+            if (description.isNotBlank() && description != "No description available.") {
+                try {
+                    val prompt = """
+                        Extract the lifecycle, care requirements, and additional information for the plant '$plantName' from the following text. Return the result as JSON with fields: lifecycle (object with type and totalDays), requirements (object with sunlight, water, soilType, temperature, phLevel), additionalInfo (object with fertilizers, idealClimate, harvestingTips, pestControl).
+                        Text: $description
+                    """.trimIndent()
+                    println("OpenAI prompt: $prompt")
+                    val openAIRequest = OpenAIChatRequest(
+                        messages = listOf(OpenAIMessage(content = prompt)),
+                        max_tokens = 512
+                    )
+                    val openAIResponse = openAIApi.getChatCompletion(openAIRequest)
+                    val aiContent = openAIResponse.body()?.choices?.firstOrNull()?.message?.content
+                    println("OpenAI response: $aiContent")
+                    if (aiContent != null && aiContent.contains("lifecycle")) {
+                        val json = JsonParser.parseString(aiContent).asJsonObject
+                        val lifecycleJson = json["lifecycle"].asJsonObject
+                        val type = lifecycleJson["type"].asString
+                        val totalDays = lifecycleJson["totalDays"].asInt
+                        println("Parsed from OpenAI: type=$type, totalDays=$totalDays")
+                        extractedLifecycle = if (totalDays > 0) CropLifecycle(
+                            stages = listOf(
+                                LifecycleStage("Seedling", totalDays / 6, "Germination and early growth"),
+                                LifecycleStage("Vegetative", totalDays / 3, "Leaf and stem development"),
+                                LifecycleStage("Flowering", totalDays / 6, "Flower formation and pollination"),
+                                LifecycleStage("Fruiting", totalDays / 4, "Fruit development and ripening"),
+                                LifecycleStage("Harvesting", totalDays / 12, "Ready for harvest")
+                            ),
+                            totalDays = totalDays
+                        ) else CropLifecycle(stages = listOf(), totalDays = -1)
+                        val reqJson = json["requirements"].asJsonObject
+                        extractedRequirements = CropRequirements(
+                            sunlight = reqJson["sunlight"].asString,
+                            water = reqJson["water"].asString,
+                            soilType = reqJson["soilType"].asString,
+                            temperature = reqJson["temperature"].asString,
+                            phLevel = reqJson["phLevel"].asString
+                        )
+                        val addJson = json["additionalInfo"].asJsonObject
+                        extractedAdditionalInfo = AdditionalInfo(
+                            fertilizers = addJson["fertilizers"].asJsonArray.mapNotNull { it?.asString },
+                            idealClimate = addJson["idealClimate"].asString,
+                            harvestingTips = addJson["harvestingTips"].asJsonArray.mapNotNull { it?.asString },
+                            pestControl = addJson["pestControl"].asJsonArray.mapNotNull { it?.asString }
+                        )
+                    }
+                } catch (e: Exception) {
+                    println("OpenAI extraction failed: ${e.message}")
+                }
+            }
+            // Fallback to improved parsing if OpenAI or Wikipedia fails
+            val lifecycle: CropLifecycle = extractedLifecycle ?: run {
+                val (type, totalDays) = parseLifecycleFromText(description)
+                println("Parsed from Wikipedia: type=$type, totalDays=$totalDays")
+                if (totalDays > 0) CropLifecycle(
+                    stages = listOf(
+                        LifecycleStage("Seedling", totalDays / 6, "Germination and early growth"),
+                        LifecycleStage("Vegetative", totalDays / 3, "Leaf and stem development"),
+                        LifecycleStage("Flowering", totalDays / 6, "Flower formation and pollination"),
+                        LifecycleStage("Fruiting", totalDays / 4, "Fruit development and ripening"),
+                        LifecycleStage("Harvesting", totalDays / 12, "Ready for harvest")
+                    ),
+                    totalDays = totalDays
+                ) else {
+                    // Use default values for common crops
+                    val cropDefaults = mapOf(
+                        "tomato" to 120,
+                        "wheat" to 120,
+                        "rice" to 150,
+                        "maize" to 120,
+                        "corn" to 120,
+                        "potato" to 110,
+                        "soybean" to 100,
+                        "cucumber" to 60,
+                        "carrot" to 75,
+                        "onion" to 120,
+                        "lettuce" to 65
+                    )
+                    val defaultDays = cropDefaults.entries.firstOrNull { plantName.lowercase().contains(it.key) }?.value
+                    if (defaultDays != null) {
+                        println("Using default lifecycle for $plantName: $defaultDays days")
+                        CropLifecycle(
+                            stages = listOf(
+                                LifecycleStage("Seedling", defaultDays / 6, "Germination and early growth"),
+                                LifecycleStage("Vegetative", defaultDays / 3, "Leaf and stem development"),
+                                LifecycleStage("Flowering", defaultDays / 6, "Flower formation and pollination"),
+                                LifecycleStage("Fruiting", defaultDays / 4, "Fruit development and ripening"),
+                                LifecycleStage("Harvesting", defaultDays / 12, "Ready for harvest")
+                            ),
+                            totalDays = defaultDays
+                        )
+                    } else {
+                        println("No lifecycle found for $plantName, using fallback 120 days")
+                        CropLifecycle(
+                            stages = listOf(
+                                LifecycleStage("Seedling", 20, "Germination and early growth"),
+                                LifecycleStage("Vegetative", 40, "Leaf and stem development"),
+                                LifecycleStage("Flowering", 20, "Flower formation and pollination"),
+                                LifecycleStage("Fruiting", 30, "Fruit development and ripening"),
+                                LifecycleStage("Harvesting", 10, "Ready for harvest")
+                            ),
+                            totalDays = 120
+                        )
+                    }
+                }
+            }
+            val requirements: CropRequirements = extractedRequirements ?: parseRequirementsFromText(description)
+            val additionalInfo: AdditionalInfo = extractedAdditionalInfo ?: parseAdditionalInfoFromText(description)
+
+            val isGeneric = lifecycle.totalDays == -1 || requirements.sunlight == "Not available" || requirements.water == "Not available" || requirements.soilType == "Not available" || requirements.temperature == "Not available" || requirements.phLevel == "Not available" || additionalInfo.fertilizers.isEmpty() || additionalInfo.idealClimate == "" || additionalInfo.harvestingTips.isEmpty() || additionalInfo.pestControl.isEmpty()
+            val cropAnalysis = CropAnalysis(
+                cropName = plantName,
+                confidence = topSuggestion.probability.toFloat(),
+                isHealthy = true,
+                diseases = listOf(),
+                lifecycle = lifecycle,
+                requirements = requirements,
+                additionalInfo = additionalInfo,
+                aiDetails = description,
+                plantInfoSections = plantInfoSections,
+                isGeneric = isGeneric
+            )
+            return Result.success(cropAnalysis)
             
         } catch (e: Exception) {
             println("Error analyzing image: ${e.message}")
             println("Exception type: ${e.javaClass.simpleName}")
             e.printStackTrace()
             
-            // Only use mock data for specific network/connection issues
             when {
                 e.message?.contains("timeout", ignoreCase = true) == true -> {
                     println("Network timeout detected, using mock data")
@@ -197,7 +415,7 @@ class CropAnalysisRepository @Inject constructor(
             return exactMatch
         }
         
-        // Try partial matches on scientific name (most reliable)
+        // Try partial matches on scientific name
         val scientificMatch = treflePlants.find { plant ->
             plant.scientificName?.lowercase()?.contains(plantIdName.lowercase()) == true ||
             plantIdName.lowercase().contains(plant.scientificName?.lowercase() ?: "")
@@ -301,7 +519,7 @@ class CropAnalysisRepository @Inject constructor(
                     else -> 120
                 }
             }
-            else -> 120 // Default lifecycle
+            else -> 120
         }
         
         return CropLifecycle(
@@ -510,5 +728,68 @@ class CropAnalysisRepository @Inject constructor(
                 )
             )
         )
+    }
+    
+    private fun parsePlantInfoSections(response: String): PlantInfoSections {
+        return try {
+            val sections = mutableMapOf<String, String>()
+            
+            // Define the section headers we're looking for
+            val sectionHeaders = listOf(
+                "**LIFECYCLE:**",
+                "**CARE REQUIREMENTS:**", 
+                "**IDEAL CLIMATE:**",
+                "**INTERESTING FACTS:**",
+                "**SUMMARY:**"
+            )
+            
+            var currentSection = ""
+            var currentContent = StringBuilder()
+            
+            // Split the response into lines
+            val lines = response.split("\n")
+            
+            for (line in lines) {
+                val trimmedLine = line.trim()
+                
+                // Check if this line is a section header
+                val matchingHeader = sectionHeaders.find { header ->
+                    trimmedLine.startsWith(header)
+                }
+                
+                if (matchingHeader != null) {
+                    // Save the previous section if we have one
+                    if (currentSection.isNotEmpty() && currentContent.isNotEmpty()) {
+                        sections[currentSection] = currentContent.toString().trim()
+                    }
+                    
+                    // Start new section
+                    currentSection = matchingHeader
+                    currentContent = StringBuilder()
+                } else if (currentSection.isNotEmpty() && trimmedLine.isNotEmpty()) {
+                    // Add content to current section
+                    if (currentContent.isNotEmpty()) {
+                        currentContent.append("\n")
+                    }
+                    currentContent.append(trimmedLine)
+                }
+            }
+            
+            // Save the last section
+            if (currentSection.isNotEmpty() && currentContent.isNotEmpty()) {
+                sections[currentSection] = currentContent.toString().trim()
+            }
+            
+            PlantInfoSections(
+                lifecycle = sections["**LIFECYCLE:**"] ?: "",
+                careRequirements = sections["**CARE REQUIREMENTS:**"] ?: "",
+                idealClimate = sections["**IDEAL CLIMATE:**"] ?: "",
+                interestingFacts = sections["**INTERESTING FACTS:**"] ?: "",
+                summary = sections["**SUMMARY:**"] ?: ""
+            )
+        } catch (e: Exception) {
+            println("Error parsing plant info sections: ${e.message}")
+            PlantInfoSections()
+        }
     }
 } 
